@@ -18,7 +18,8 @@ get_deployment_ids() {
 }
 
 get_task_ids() {
-  aws ecs list-tasks --cluster "${CLUSTER}" --no-paginate --started-by "${1}" --output json | jq '[.taskArns[] | split("/") | .[2]]'
+  ( aws ecs list-tasks --cluster ${CLUSTER} --no-paginate --started-by "${1}" --output json | jq '[.taskArns[] | split("/") | .[2]]' | jq . ; aws ecs list-tasks --cluster ${CLUSTER} --no-paginate --started-by "${1}" --output json --desired-status STOPPED | jq '[.taskArns[] | split("/") | .[2]]' ) | jq -s 'add'
+  # aws ecs list-tasks --cluster "${CLUSTER}" --no-paginate --started-by "${1}" --output json | jq '[.taskArns[] | split("/") | .[2]]'
 }
 
 get_task() {
@@ -53,9 +54,13 @@ get_stream() {
 }
 
 process_container() {
-    STREAM=$(get_stream "${1}" "${2}")
+    STREAM=$(get_stream "${3}" "${2}")
+    echo  "${3}" "${2}"
     echo -e "examining Cloudwatch logs ${2}/${STREAM}\n"
+    echo "=== LOGS FOR ${2}/${STREAM} ==="
     aws logs get-log-events --log-group-name "${2}" --log-stream-name "$STREAM" | jq -r '.events[].message'
+    echo "=== END LOGS FOR ${2}/${STREAM} ==="
+    echo ""
 }
 
 process_task() {
@@ -66,7 +71,7 @@ process_task() {
     LOG_GROUP=$(get_log_group "${TASK_ARN}")
     CONTAINER_IDS=$(get_container_ids "${TASK}")
 
-    process_containers "${CONTAINER_IDS}" "${LOG_GROUP}"
+    process_containers "${CONTAINER_IDS}" "${LOG_GROUP}" ${1}
 }
 
 process_deployment() {
@@ -90,12 +95,12 @@ process_tasks() {
 
 process_containers() {
     for containerId in $(echo "${1}" | jq -r '.[]'); do
-      process_container "${containerId}" "${2}"
+      process_container "${containerId}" "${2}" "${3}"
     done
 }
 
 DEPLOYMENTS=$(get_deployments)
 IDS=$(get_deployment_ids "${DEPLOYMENTS}")
 
-show_cluster_events
+# show_cluster_events
 process_deployments "${IDS}"
